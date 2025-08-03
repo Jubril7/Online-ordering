@@ -1,7 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProductViewSet, CategoryViewSet, CartView, AddToCartView, RemoveFromCartView, CheckoutView, CartViewSet, RestaurantCreateView, RestaurantDetailView, DishViewSet, TotalSalesReportView, OrderCountReportView, TopDishesReportView, DailyOrdersReportView, TopProductsView
-                    
+from .views import ProductViewSet, CategoryViewSet, CartView, AddToCartView, RemoveFromCartView, CheckoutView, CartViewSet, RestaurantCreateView, RestaurantDetailView, DishViewSet, TotalSalesReportView, OrderCountReportView, TopDishesReportView, DailyOrdersReportView, TopProductsView,RestaurantOrdersAPIView ,MyOrdersView              
 
 router = DefaultRouter()
 router.register(r'products', ProductViewSet)
@@ -22,4 +21,7 @@ urlpatterns = [
     path('reports/order-count/', OrderCountReportView.as_view()),
     path('reports/top-dishes/', TopDishesReportView.as_view()),
     path('reports/daily-orders/', DailyOrdersReportView.as_view()),
+    path('top-products/', TopProductsView.as_view(), name='top-products'),
+    path('my-orders/', MyOrdersView.as_view()),
+    path('restaurant-orders/', RestaurantOrdersAPIView.as_view(), name='restaurant-orders'),
 ]

@@ -1,17 +1,18 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, viewsets, generics, permissions
+from rest_framework import status, viewsets, generics, permissions, serializers
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.exceptions import PermissionDenied
 from django.utils.timezone import now, timedelta
-from .serializers import ProductSerializer, CategorySerializer, CartSerializer, CartItemSerializer, RestaurantSerializer, DishSerializer
+from .serializers import ProductSerializer, CategorySerializer, CartSerializer, CartItemSerializer, RestaurantSerializer, DishSerializer, RestaurantSerializer, OrderSerializer
 from django.db.models import Sum, Count
 
 
 from django.shortcuts import get_object_or_404
 
-from .models import Product, CartItem, Order, Category, Cart, CartItem, Restaurant, Dish
+from .models import Product, CartItem, Order, Category, Cart, CartItem, Restaurant, Dish, RestaurantOwnerProfile
 
 class CartView(APIView):
     authentication_classes = [TokenAuthentication]
@@ -153,12 +154,15 @@ class RestaurantCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        user = self.request.user
+        if Restaurant.objects.filter(owner=user).exists():
+            raise serializers.ValidationError("You already have a restaurant.")
+        serializer.save(owner=user)
 
 class RestaurantDetailView(generics.RetrieveUpdateAPIView):
     queryset = Restaurant.objects.all()
     serializer_class = RestaurantSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get_object(self):
         return self.request.user.restaurant
@@ -167,6 +171,7 @@ class DishViewSet(viewsets.ModelViewSet):
     queryset = Dish.objects.all()
     serializer_class = DishSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+
 class TotalSalesReportView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -180,14 +185,11 @@ class OrderCountReportView(APIView):
 
     def get(self, request):
         count = Order.objects.count()
-        return Response({"total_orders": count})
-    
-class TotalSalesReportView(APIView):
-    permission_classes = [IsAdminUser]
-
-    def get(self, request):
-        total = Order.objects.aggregate(total_sales=Sum('total_price'))['total_sales'] or 0
-        return Response({"total_sales": total})
+        total_sales = Order.objects.aggregate(total_sales=Sum('total_price'))['total_sales'] or 0
+        return Response({
+            "total_orders": count,
+            "total_sales": total_sales
+    })
 
 
 class TopDishesReportView(APIView):
@@ -223,17 +225,61 @@ class DailyOrdersReportView(APIView):
         return Response(data)
 
 class TopProductsView(APIView):
+    permission_classes = [IsAdminUser]
     def get(self, request):
         top_products = Product.objects.annotate(
-            order_count=Count('orderitem')
+            order_count=Count('order_items')
         ).order_by('-order_count')[:5]
 
-        data = [
-            {
-                'product': product.name,
-                'order_count': product.order_count
-            }
-            for product in top_products
-        ]
-        return Response(data)
+        serializer = ProductSerializer(top_products, many=True)
+        return Response(serializer.data)
+
+        # data = [
+        #     {
+        #         'product': product.name,
+        #         'order_count': product.order_count
+        #     }
+        #     for product in top_products
+        # ]
+        # return Response(data)
+
+class MyOrdersView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        customer_profile = request.user.customerprofile
+        orders = Order.objects.filter(customer=customer_profile).order_by('-created_at')
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+    
+class RestaurantOrdersAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            restaurant = RestaurantOwnerProfile.objects.get(user=request.user)
+        except RestaurantOwnerProfile.DoesNotExist:
+            raise PermissionDenied("You are not a restaurant owner.")
+
+        today = now().date()
+
+        orders = Order.objects.filter(
+            restaurant=restaurant,
+            created_at__date=today
+        )
+
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+        
+# class MyOrdersView(APIView):
+#     authentication_classes = [TokenAuthentication]
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         customer_profile = request.user.customerprofile
+#         orders = Order.objects.filter(customer=customer_profile).order_by('-created_at')
+#         serializer = OrderSerializer(orders, many=True)
+#         return Response(serializer.data)
 
